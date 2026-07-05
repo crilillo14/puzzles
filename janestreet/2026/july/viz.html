@@ -1,0 +1,804 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>JS July 2026 — Knight Tower Tour</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #14171c; color: #d8dee6;
+    font: 14px/1.45 -apple-system, "Segoe UI", Helvetica, sans-serif;
+    padding: 14px 18px; user-select: none;
+  }
+  h1 { font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+  .sub { color: #7d8794; font-size: 12px; margin-bottom: 10px; }
+  #statusbar {
+    display: flex; gap: 22px; flex-wrap: wrap; align-items: baseline;
+    background: #1d222a; border: 1px solid #2c333d; border-radius: 8px;
+    padding: 8px 14px; margin-bottom: 12px;
+  }
+  #statusbar b { color: #fff; font-size: 16px; }
+  #statusbar .lbl { color: #7d8794; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-right: 5px; }
+  #main { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+  .panel {
+    background: #1d222a; border: 1px solid #2c333d; border-radius: 8px; padding: 10px;
+  }
+  .panel h2 { font-size: 12px; color: #9aa5b1; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+  canvas { display: block; }
+  #board3d { cursor: grab; }
+  #side { display: flex; flex-direction: column; gap: 14px; width: 300px; }
+  #controls label { display: flex; align-items: center; gap: 7px; margin: 6px 0; color: #b8c0ca; }
+  #controls input[type=number], #controls select {
+    background: #12151a; color: #e6ebf1; border: 1px solid #333b46; border-radius: 5px; padding: 3px 6px; width: 70px;
+  }
+  button {
+    background: #2a313b; color: #dfe5ec; border: 1px solid #3a434f; border-radius: 6px;
+    padding: 5px 10px; cursor: pointer; font-size: 13px; margin: 2px 3px 2px 0;
+  }
+  button:hover { background: #353e4a; }
+  #log { max-height: 340px; overflow-y: auto; font-size: 12.5px; }
+  #log .mv { padding: 2px 6px; border-radius: 4px; display: flex; gap: 8px; align-items: baseline; }
+  #log .mv:nth-child(odd) { background: #191e25; }
+  #log .n { color: #7d8794; width: 30px; flex-shrink: 0; }
+  #log .flat { color: #b8c0ca; } #log .up { color: #7fd48a; } #log .down { color: #f0a35e; }
+  #log .sc { margin-left: auto; font-weight: 600; color: #fff; }
+  #log .rec-ok { background: #17301d !important; }
+  #log .rec-bad { background: #38201d !important; }
+  #log .badge { font-size: 11px; padding: 0 5px; border-radius: 3px; }
+  #log .badge.ok { background: #2b7a3d; color: #fff; }
+  #log .badge.bad { background: #a03d31; color: #fff; }
+  #log .badge.note { background: #6b5b23; color: #fff; }
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 50; display: none;
+    background: #0d1014ee; border: 1px solid #3a434f; border-radius: 7px;
+    padding: 8px 11px; font-size: 12.5px; max-width: 300px; color: #dfe5ec;
+    box-shadow: 0 6px 18px #000a;
+  }
+  #tooltip .d { color: #7fd48a; font-weight: 600; }
+  #flash {
+    position: fixed; top: 14px; right: 18px; z-index: 60;
+    background: #6b5b23; color: #fff; border-radius: 7px; padding: 8px 14px;
+    display: none; box-shadow: 0 4px 14px #0009;
+  }
+  .legend { font-size: 11.5px; color: #7d8794; margin-top: 7px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<h1>Jane Street — July 2026 · Knight Tower Tour workbench</h1>
+<div class="sub">You solve, this does the bookkeeping. Click a green 1-move square to move the knight. Hover highlighted squares for arrival scores &amp; sample paths.</div>
+
+<div id="statusbar">
+  <span><span class="lbl">Score</span><b id="stScore">0</b></span>
+  <span><span class="lbl">Next move #</span><b id="stMove">1</b></span>
+  <span><span class="lbl">Legal moves</span><b id="stLegal">–</b></span>
+  <span><span class="lbl">Towers visited</span><b id="stTowers">0 / 0</b></span>
+  <span><span class="lbl">At</span><b id="stPos">a1</b></span>
+</div>
+
+<div id="main">
+  <div class="panel">
+    <h2>Board (2D) — plan view</h2>
+    <canvas id="board2d"></canvas>
+    <div class="legend">
+      ▲ tower (gold ✓ = visited) · green fill = reachable, badge = min #moves ·
+      bold number = written score · red trail = your path · S = start (a1)
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Board (3D) — drag to rotate / tilt</h2>
+    <canvas id="board3d"></canvas>
+    <div class="legend">Gold-edged cubes are towers. Heights: 1 everywhere, 2 under a tower.</div>
+  </div>
+
+  <div id="side">
+    <div class="panel">
+      <h2>Tower editor <span id="hudCount" style="text-transform:none;color:#7d8794"></span></h2>
+      <canvas id="hud"></canvas>
+      <div class="legend">Click a cell to put that region's tower there (one per region — it moves). Click the tower's cell again to remove it.</div>
+    </div>
+
+    <div class="panel" id="controls">
+      <h2>Controls</h2>
+      <label>Lookahead depth
+        <select id="depthSel">
+          <option>0</option><option>1</option><option selected>2</option>
+          <option>3</option><option>4</option><option>5</option>
+        </select> moves
+      </label>
+      <label><input type="checkbox" id="geoChk"> geometric only (ignore score/÷ rule in lookahead)</label>
+      <label>K (record interval after move 18) <input type="number" id="kInput" min="4" placeholder="?"></label>
+      <label><input type="checkbox" id="flipChk"> flip board vertically (orientation guess wrong)</label>
+      <div style="margin-top:8px">
+        <button id="undoBtn">Undo (z)</button>
+        <button id="resetPathBtn">Reset path</button>
+        <button id="clearTowersBtn">Clear towers</button>
+      </div>
+      <div>
+        <button id="exportBtn">Export state</button>
+        <button id="importBtn">Import state</button>
+        <button id="resetViewBtn">Reset 3D view</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Move log <span style="text-transform:none;color:#7d8794">(rows at record moves get checked vs board)</span></h2>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+<div id="flash"></div>
+
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ data
+   Copied verbatim from src/main.py. Row 0 = TOP row of the puzzle image
+   (toggle "flip" in controls if that guess is wrong). */
+const RAW_BOARD = [
+  [0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 750, 0, 88, 0, 272, 1, 0],
+  [0, 449, 0, 0, 16, 0, 0, 0],
+  [528, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 23, 0, 138, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 37, 0, 1100],
+];
+const RAW_REG = [
+  [0, 0, 0, 0, 0, 1, 1, 1],
+  [2, 2, 2, 3, 3, 4, 4, 1],
+  [2, 5, 2, 3, 3, 3, 4, 1],
+  [6, 5, 5, 9, 9, 10, 4, 4],
+  [6, 6, 5, 9, 9, 10, 10, 11],
+  [6, 7, 5, 8, 10, 10, 12, 11],
+  [6, 7, 8, 8, 8, 12, 12, 11],
+  [7, 7, 7, 8, 12, 12, 11, 11],
+];
+const NREG = 13;
+const REGION_COLORS = ['#a3c9e2','#f4a9a0','#c2e0a3','#cbb3de','#f9c784','#f7f0a0',
+                       '#b8b4dd','#f9c9de','#9fd8cb','#d8c3a5','#b5e2b0','#e8a9b8','#a9cdd8'];
+
+/* Math coords: x = file 0..7 (a..h), y = rank 0..7, y=0 at BOTTOM.
+   Knight starts at (0,0) = a1. */
+let flipped = false;
+let VAL, REG, REGION_CELLS;
+function buildBoards() {
+  VAL = []; REG = []; REGION_CELLS = Array.from({length: NREG}, () => []);
+  for (let x = 0; x < 8; x++) { VAL.push([]); REG.push([]); }
+  for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) {
+    const r = flipped ? y : 7 - y;
+    VAL[x][y] = RAW_BOARD[r][x];
+    REG[x][y] = RAW_REG[r][x];
+    REGION_CELLS[REG[x][y]].push({x, y});
+  }
+}
+
+/* ------------------------------------------------------------------ state */
+let towers = Array(NREG).fill(null);   // regionId -> {x,y} | null
+let path = [{x: 0, y: 0}];             // knight squares, path[0] = start
+let K = null;                          // record interval after move 18
+let depth = 2;
+let geoOnly = false;
+
+const key = c => c.x + ',' + c.y;
+const alg = c => 'abcdefgh'[c.x] + (c.y + 1);
+const inB = (x, y) => x >= 0 && x < 8 && y >= 0 && y < 8;
+
+let towerSet;                          // Map "x,y" -> regionId
+function rebuildTowerSet() {
+  towerSet = new Map();
+  towers.forEach((c, r) => { if (c) towerSet.set(key(c), r); });
+}
+const heightAt = c => towerSet.has(key(c)) ? 2 : 1;
+
+/* ------------------------------------------------------------------ rules */
+const FLAT = [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]];
+const VERT = [[2,0],[0,2],[-2,0],[0,-2]];
+
+/* Score the whole path. Returns {steps, score, badAt}.
+   steps[i] = {n, from, to, dz, score, legal}. badAt = index in path of the
+   first illegal destination (path should be truncated before it), or -1. */
+function computeSteps(p) {
+  const steps = []; let s = 0;
+  const seen = new Set([key(p[0])]);
+  for (let i = 1; i < p.length; i++) {
+    const n = i, from = p[i-1], to = p[i];
+    if (!inB(to.x, to.y) || seen.has(key(to))) return {steps, score: s, badAt: i};
+    const adx = Math.abs(to.x - from.x), ady = Math.abs(to.y - from.y);
+    const dz = heightAt(to) - heightAt(from);
+    const geo = (dz === 0 && ((adx === 1 && ady === 2) || (adx === 2 && ady === 1))) ||
+                (Math.abs(dz) === 1 && ((adx === 2 && ady === 0) || (adx === 0 && ady === 2)));
+    if (!geo) return {steps, score: s, badAt: i};
+    if (dz === 0) s += n;
+    else if (dz === 1) s *= n;
+    else { if (s % n !== 0) return {steps, score: s, badAt: i}; s /= n; }
+    steps.push({n, from, to, dz, score: s});
+    seen.add(key(to));
+  }
+  return {steps, score: s, badAt: -1};
+}
+
+/* Legal moves from `cell`, given visited set, current score s, move number n.
+   strict=true enforces the divisibility rule (used for real moves);
+   strict=false is geometric-only (scores reported as null on bad ÷). */
+function genMoves(cell, visited, s, n, strict) {
+  const out = [], h0 = heightAt(cell);
+  for (const [dx, dy] of FLAT) {
+    const to = {x: cell.x + dx, y: cell.y + dy};
+    if (!inB(to.x, to.y) || visited.has(key(to))) continue;
+    if (heightAt(to) === h0) out.push({to, dz: 0, s2: s === null ? null : s + n});
+  }
+  for (const [dx, dy] of VERT) {
+    const to = {x: cell.x + dx, y: cell.y + dy};
+    if (!inB(to.x, to.y) || visited.has(key(to))) continue;
+    const dz = heightAt(to) - h0;
+    if (Math.abs(dz) !== 1) continue;
+    if (dz === 1) out.push({to, dz, s2: s === null ? null : s * n});
+    else {
+      if (s !== null && s % n === 0) out.push({to, dz, s2: s / n});
+      else if (!strict) out.push({to, dz, s2: null});
+    }
+  }
+  return out;
+}
+
+/* Exact lookahead: DFS up to `maxD` moves from the end of the current path.
+   Returns Map key -> {min, byDepth: Map(d -> Set(scoreStr)), paths: [...] } */
+function lookahead(maxD) {
+  const res = new Map();
+  if (maxD <= 0) return res;
+  const {steps, score} = computeSteps(path);
+  const visited = new Set(path.map(key));
+  const cur = path[path.length - 1];
+  const n0 = steps.length + 1;
+  const trail = [];
+  function dfs(cell, s, n, d) {
+    if (d > maxD) return;
+    for (const m of genMoves(cell, visited, geoOnly ? null : s, n, !geoOnly)) {
+      const k = key(m.to);
+      let e = res.get(k);
+      if (!e) { e = {min: d, byDepth: new Map(), paths: []}; res.set(k, e); }
+      e.min = Math.min(e.min, d);
+      if (!e.byDepth.has(d)) e.byDepth.set(d, new Set());
+      e.byDepth.get(d).add(m.s2 === null ? '?' : String(m.s2));
+      if (e.paths.length < 12) e.paths.push([...trail, m.to]);
+      visited.add(k); trail.push(m.to);
+      dfs(m.to, m.s2, n + 1, d + 1);
+      trail.pop(); visited.delete(k);
+    }
+  }
+  dfs(cur, geoOnly ? null : score, n0, 1);
+  return res;
+}
+
+const isRecordMove = n => n <= 18 ? n % 3 === 0 : (K != null && K > 0 && (n - 18) % K === 0);
+
+/* ------------------------------------------------------------------ derived, cached per update */
+let cache = {steps: [], score: 0, legal: [], la: new Map()};
+function recompute() {
+  rebuildTowerSet();
+  const r = computeSteps(path);
+  if (r.badAt >= 0) {                       // tower edits can invalidate the tail
+    path = path.slice(0, r.badAt);
+    flash('Path truncated at move ' + r.badAt + ' (no longer legal under this tower config)');
+    return recompute();
+  }
+  const visited = new Set(path.map(key));
+  const cur = path[path.length - 1];
+  cache = {
+    steps: r.steps, score: r.score,
+    legal: genMoves(cur, visited, r.score, r.steps.length + 1, true),
+    la: lookahead(depth),
+  };
+}
+
+/* ------------------------------------------------------------------ canvas helpers */
+function setupCanvas(c, w, h) {
+  const dpr = window.devicePixelRatio || 1;
+  c.width = w * dpr; c.height = h * dpr;
+  c.style.width = w + 'px'; c.style.height = h + 'px';
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 255) * f), g = Math.round(((n >> 8) & 255) * f), b = Math.round((n & 255) * f);
+  return `rgb(${r},${g},${b})`;
+}
+
+/* ------------------------------------------------------------------ 2D board */
+const c2d = document.getElementById('board2d');
+const B2 = {ML: 30, MT: 12, CS: 62};
+const ctx2 = setupCanvas(c2d, B2.ML + B2.CS * 8 + 12, B2.MT + B2.CS * 8 + 30);
+const cellXY = c => ({sx: B2.ML + c.x * B2.CS, sy: B2.MT + (7 - c.y) * B2.CS});
+
+let hoverCell = null;
+
+function draw2d() {
+  const {CS} = B2;
+  ctx2.clearRect(0, 0, c2d.width, c2d.height);
+  const visited = new Set(path.map(key));
+  const cur = path[path.length - 1];
+  const legalKeys = new Set(cache.legal.map(m => key(m.to)));
+
+  for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) {
+    const c = {x, y}, {sx, sy} = cellXY(c);
+    ctx2.fillStyle = REGION_COLORS[REG[x][y]];
+    ctx2.fillRect(sx, sy, CS, CS);
+    if (visited.has(key(c)) && key(c) !== key(cur)) {
+      ctx2.fillStyle = 'rgba(20,23,28,0.34)';
+      ctx2.fillRect(sx, sy, CS, CS);
+    }
+    const e = cache.la.get(key(c));
+    if (e) {
+      const a = e.min === 1 ? 0.5 : Math.max(0.12, 0.38 - 0.09 * (e.min - 2));
+      ctx2.fillStyle = `rgba(28,190,110,${a})`;
+      ctx2.fillRect(sx, sy, CS, CS);
+      if (legalKeys.has(key(c))) {
+        ctx2.strokeStyle = '#17b566'; ctx2.lineWidth = 3;
+        ctx2.strokeRect(sx + 2, sy + 2, CS - 4, CS - 4);
+      }
+      ctx2.fillStyle = '#0d3a22';
+      ctx2.beginPath(); ctx2.arc(sx + 11, sy + CS - 11, 8.5, 0, 7); ctx2.fill();
+      ctx2.fillStyle = '#8ff0b8'; ctx2.font = 'bold 11px sans-serif';
+      ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
+      ctx2.fillText(e.min, sx + 11, sy + CS - 10.5);
+    }
+  }
+
+  // thin grid + thick region borders
+  ctx2.strokeStyle = 'rgba(0,0,0,0.18)'; ctx2.lineWidth = 1;
+  for (let i = 0; i <= 8; i++) {
+    ctx2.beginPath(); ctx2.moveTo(B2.ML + i * CS, B2.MT); ctx2.lineTo(B2.ML + i * CS, B2.MT + 8 * CS); ctx2.stroke();
+    ctx2.beginPath(); ctx2.moveTo(B2.ML, B2.MT + i * CS); ctx2.lineTo(B2.ML + 8 * CS, B2.MT + i * CS); ctx2.stroke();
+  }
+  ctx2.strokeStyle = '#14171c'; ctx2.lineWidth = 3; ctx2.lineCap = 'round';
+  for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) {
+    const {sx, sy} = cellXY({x, y});
+    if (x === 7 || REG[x][y] !== REG[x + 1][y]) {
+      ctx2.beginPath(); ctx2.moveTo(sx + CS, sy); ctx2.lineTo(sx + CS, sy + CS); ctx2.stroke();
+    }
+    if (x === 0) { ctx2.beginPath(); ctx2.moveTo(sx, sy); ctx2.lineTo(sx, sy + CS); ctx2.stroke(); }
+    if (y === 7 || REG[x][y] !== REG[x][y + 1]) {
+      ctx2.beginPath(); ctx2.moveTo(sx, sy); ctx2.lineTo(sx + CS, sy); ctx2.stroke();
+    }
+    if (y === 0) { ctx2.beginPath(); ctx2.moveTo(sx, sy + CS); ctx2.lineTo(sx + CS, sy + CS); ctx2.stroke(); }
+  }
+
+  // values, towers, start marker
+  ctx2.textAlign = 'center';
+  for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) {
+    const c = {x, y}, {sx, sy} = cellXY(c);
+    if (VAL[x][y] > 0) {
+      ctx2.fillStyle = '#141414'; ctx2.font = 'bold 15px sans-serif'; ctx2.textBaseline = 'middle';
+      ctx2.fillText(VAL[x][y], sx + CS / 2, sy + CS / 2 - (towerSet.has(key(c)) ? 6 : 0));
+    }
+    if (towerSet.has(key(c))) {
+      const vis = visited.has(key(c));
+      ctx2.fillStyle = vis ? '#b8860b' : '#232323';
+      ctx2.beginPath();
+      ctx2.moveTo(sx + CS - 9, sy + 5); ctx2.lineTo(sx + CS - 17, sy + 17); ctx2.lineTo(sx + CS - 1, sy + 17);
+      ctx2.closePath(); ctx2.fill();
+      if (vis) {
+        ctx2.fillStyle = '#b8860b'; ctx2.font = 'bold 11px sans-serif'; ctx2.textBaseline = 'alphabetic';
+        ctx2.fillText('✓', sx + CS - 26, sy + 16);
+      }
+    }
+  }
+  { // start marker
+    const {sx, sy} = cellXY({x: 0, y: 0});
+    ctx2.fillStyle = 'rgba(20,20,20,0.55)'; ctx2.font = 'bold 12px sans-serif'; ctx2.textBaseline = 'alphabetic';
+    ctx2.fillText('S', sx + 9, sy + CS - 6);
+  }
+
+  // hovered sample paths (draw under the main trail)
+  if (hoverCell) {
+    const e = cache.la.get(key(hoverCell));
+    if (e) {
+      const hues = [45, 190, 300, 20, 130, 260, 80, 330, 210, 0, 160, 280];
+      e.paths.forEach((pp, i) => {
+        ctx2.strokeStyle = `hsla(${hues[i % hues.length]},85%,60%,0.55)`; ctx2.lineWidth = 2.5;
+        ctx2.beginPath();
+        const s0 = cellXY(path[path.length - 1]);
+        ctx2.moveTo(s0.sx + CS / 2, s0.sy + CS / 2);
+        for (const c of pp) { const p2 = cellXY(c); ctx2.lineTo(p2.sx + CS / 2, p2.sy + CS / 2); }
+        ctx2.stroke();
+      });
+    }
+  }
+
+  // path trail
+  if (path.length > 1) {
+    ctx2.strokeStyle = '#d63b3b'; ctx2.lineWidth = 3.5; ctx2.lineJoin = 'round';
+    ctx2.beginPath();
+    path.forEach((c, i) => {
+      const {sx, sy} = cellXY(c);
+      i ? ctx2.lineTo(sx + CS / 2, sy + CS / 2) : ctx2.moveTo(sx + CS / 2, sy + CS / 2);
+    });
+    ctx2.stroke();
+    path.forEach((c, i) => {
+      if (i === 0) return;
+      const {sx, sy} = cellXY(c);
+      ctx2.fillStyle = '#d63b3b';
+      ctx2.beginPath(); ctx2.arc(sx + CS / 2, sy + CS / 2, 9, 0, 7); ctx2.fill();
+      ctx2.fillStyle = '#fff'; ctx2.font = 'bold 10px sans-serif'; ctx2.textBaseline = 'middle';
+      ctx2.fillText(i, sx + CS / 2, sy + CS / 2 + 0.5);
+    });
+  }
+
+  // knight
+  {
+    const {sx, sy} = cellXY(cur);
+    ctx2.font = '34px serif'; ctx2.textBaseline = 'middle';
+    ctx2.fillStyle = '#fff';
+    ctx2.strokeStyle = '#000'; ctx2.lineWidth = 3;
+    ctx2.strokeText('♞', sx + CS / 2, sy + CS / 2 - 2);
+    ctx2.fillText('♞', sx + CS / 2, sy + CS / 2 - 2);
+  }
+
+  // hover outline
+  if (hoverCell) {
+    const {sx, sy} = cellXY(hoverCell);
+    ctx2.strokeStyle = '#fff'; ctx2.lineWidth = 2;
+    ctx2.strokeRect(sx + 1, sy + 1, CS - 2, CS - 2);
+  }
+
+  // coordinate labels
+  ctx2.fillStyle = '#7d8794'; ctx2.font = '12px sans-serif'; ctx2.textBaseline = 'middle';
+  for (let i = 0; i < 8; i++) {
+    ctx2.fillText('abcdefgh'[i], B2.ML + i * CS + CS / 2, B2.MT + 8 * CS + 14);
+    ctx2.textAlign = 'right';
+    ctx2.fillText(i + 1, B2.ML - 8, B2.MT + (7 - i) * CS + CS / 2);
+    ctx2.textAlign = 'center';
+  }
+}
+
+function cellAt2d(ev) {
+  const r = c2d.getBoundingClientRect();
+  const x = Math.floor((ev.clientX - r.left - B2.ML) / B2.CS);
+  const y = 7 - Math.floor((ev.clientY - r.top - B2.MT) / B2.CS);
+  return inB(x, y) ? {x, y} : null;
+}
+
+/* ------------------------------------------------------------------ 3D board */
+const c3d = document.getElementById('board3d');
+const W3 = 560, H3 = 540;
+const ctx3 = setupCanvas(c3d, W3, H3);
+let yaw = -0.55, el = 0.95;
+const S3 = 42;
+
+function proj(x, y, z) {
+  const px = x - 4, py = 4 - y;                     // y negated: rank 1 faces viewer at yaw 0
+  const u = px * Math.cos(yaw) - py * Math.sin(yaw);
+  const v = px * Math.sin(yaw) + py * Math.cos(yaw);
+  return {
+    X: W3 / 2 + u * S3,
+    Y: H3 * 0.54 + v * Math.sin(el) * S3 - z * Math.cos(el) * S3,
+    v,
+  };
+}
+function faceVisible(nx, ny, nz) {
+  const nyy = -ny;
+  const nv = nx * Math.sin(yaw) + nyy * Math.cos(yaw);
+  return nv * Math.cos(el) + nz * Math.sin(el) > 1e-6;
+}
+
+function draw3d() {
+  ctx3.clearRect(0, 0, W3, H3);
+  const cur = path[path.length - 1];
+  const faces = [];
+
+  for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) {
+    const c = {x, y}, h = heightAt(c), col = REGION_COLORS[REG[x][y]];
+    const isTowerCell = towerSet.has(key(c));
+    for (let lvl = 0; lvl < h; lvl++) {
+      const z0 = lvl, z1 = lvl + 1;
+      const tower = isTowerCell && lvl === 1;
+      const sides = [
+        {n: [0, -1, 0], vs: [[x, y, z0], [x + 1, y, z0], [x + 1, y, z1], [x, y, z1]]},
+        {n: [0, 1, 0],  vs: [[x + 1, y + 1, z0], [x, y + 1, z0], [x, y + 1, z1], [x + 1, y + 1, z1]]},
+        {n: [-1, 0, 0], vs: [[x, y + 1, z0], [x, y, z0], [x, y, z1], [x, y + 1, z1]]},
+        {n: [1, 0, 0],  vs: [[x + 1, y, z0], [x + 1, y + 1, z0], [x + 1, y + 1, z1], [x + 1, y, z1]]},
+      ];
+      for (const f of sides) {
+        if (!faceVisible(...f.n)) continue;
+        const shf = (f.n[0] !== 0) ? 0.62 : 0.78;
+        faces.push({vs: f.vs, fill: shade(col, shf), tower, top: false, cell: c});
+      }
+      if (lvl === h - 1) {
+        faces.push({
+          vs: [[x, y, z1], [x + 1, y, z1], [x + 1, y + 1, z1], [x, y + 1, z1]],
+          fill: col, tower, top: true, cell: c,
+        });
+      }
+    }
+  }
+
+  for (const f of faces) {
+    f.pts = f.vs.map(v => proj(...v));
+    f.d = f.pts.reduce((a, p) => a + p.v, 0) / f.pts.length;
+  }
+  faces.sort((a, b) => a.d - b.d);
+
+  const laKeys = cache.la;
+  const visited = new Set(path.map(key));
+  for (const f of faces) {
+    ctx3.beginPath();
+    f.pts.forEach((p, i) => i ? ctx3.lineTo(p.X, p.Y) : ctx3.moveTo(p.X, p.Y));
+    ctx3.closePath();
+    ctx3.fillStyle = f.fill; ctx3.fill();
+    if (f.top) {
+      const e = laKeys.get(key(f.cell));
+      if (e) {
+        ctx3.fillStyle = `rgba(28,190,110,${e.min === 1 ? 0.55 : 0.3})`;
+        ctx3.fill();
+      }
+      if (visited.has(key(f.cell)) && key(f.cell) !== key(path[path.length - 1])) {
+        ctx3.fillStyle = 'rgba(20,23,28,0.3)'; ctx3.fill();
+      }
+    }
+    ctx3.strokeStyle = f.tower ? '#b8860b' : 'rgba(0,0,0,0.3)';
+    ctx3.lineWidth = f.tower ? 2 : 1;
+    ctx3.stroke();
+  }
+
+  // written values on top faces
+  ctx3.textAlign = 'center'; ctx3.textBaseline = 'middle'; ctx3.font = 'bold 11px sans-serif';
+  for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) {
+    if (VAL[x][y] > 0) {
+      const p = proj(x + 0.5, y + 0.5, heightAt({x, y}) + 0.02);
+      ctx3.strokeStyle = 'rgba(255,255,255,0.75)'; ctx3.lineWidth = 3;
+      ctx3.strokeText(VAL[x][y], p.X, p.Y);
+      ctx3.fillStyle = '#111'; ctx3.fillText(VAL[x][y], p.X, p.Y);
+    }
+  }
+
+  // path in 3D
+  if (path.length > 1) {
+    ctx3.strokeStyle = '#d63b3b'; ctx3.lineWidth = 3; ctx3.lineJoin = 'round';
+    ctx3.beginPath();
+    path.forEach((c, i) => {
+      const p = proj(c.x + 0.5, c.y + 0.5, heightAt(c) + 0.08);
+      i ? ctx3.lineTo(p.X, p.Y) : ctx3.moveTo(p.X, p.Y);
+    });
+    ctx3.stroke();
+    path.forEach((c, i) => {
+      const p = proj(c.x + 0.5, c.y + 0.5, heightAt(c) + 0.08);
+      ctx3.fillStyle = i ? '#d63b3b' : '#333';
+      ctx3.beginPath(); ctx3.arc(p.X, p.Y, 4, 0, 7); ctx3.fill();
+    });
+  }
+  { // knight
+    const p = proj(cur.x + 0.5, cur.y + 0.5, heightAt(cur) + 0.1);
+    ctx3.font = '24px serif';
+    ctx3.strokeStyle = '#000'; ctx3.lineWidth = 3;
+    ctx3.strokeText('♞', p.X, p.Y - 10);
+    ctx3.fillStyle = '#fff'; ctx3.fillText('♞', p.X, p.Y - 10);
+  }
+}
+
+/* ------------------------------------------------------------------ tower HUD */
+const chud = document.getElementById('hud');
+const HCS = 33;
+const ctxh = setupCanvas(chud, HCS * 8 + 2, HCS * 8 + 2);
+
+function drawHud() {
+  ctxh.clearRect(0, 0, chud.width, chud.height);
+  for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) {
+    const sx = 1 + x * HCS, sy = 1 + (7 - y) * HCS;
+    ctxh.fillStyle = REGION_COLORS[REG[x][y]];
+    ctxh.fillRect(sx, sy, HCS, HCS);
+  }
+  ctxh.strokeStyle = '#14171c'; ctxh.lineWidth = 2;
+  for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) {
+    const sx = 1 + x * HCS, sy = 1 + (7 - y) * HCS;
+    if (x === 7 || REG[x][y] !== REG[x + 1][y]) { ctxh.beginPath(); ctxh.moveTo(sx + HCS, sy); ctxh.lineTo(sx + HCS, sy + HCS); ctxh.stroke(); }
+    if (x === 0) { ctxh.beginPath(); ctxh.moveTo(sx, sy); ctxh.lineTo(sx, sy + HCS); ctxh.stroke(); }
+    if (y === 7 || REG[x][y] !== REG[x][y + 1]) { ctxh.beginPath(); ctxh.moveTo(sx, sy); ctxh.lineTo(sx + HCS, sy); ctxh.stroke(); }
+    if (y === 0) { ctxh.beginPath(); ctxh.moveTo(sx, sy + HCS); ctxh.lineTo(sx + HCS, sy + HCS); ctxh.stroke(); }
+  }
+  towers.forEach(c => {
+    if (!c) return;
+    const sx = 1 + c.x * HCS, sy = 1 + (7 - c.y) * HCS;
+    ctxh.fillStyle = '#1a1a1a';
+    ctxh.beginPath();
+    ctxh.moveTo(sx + HCS / 2, sy + 6); ctxh.lineTo(sx + 7, sy + HCS - 7); ctxh.lineTo(sx + HCS - 7, sy + HCS - 7);
+    ctxh.closePath(); ctxh.fill();
+  });
+  const placed = towers.filter(Boolean).length;
+  document.getElementById('hudCount').textContent = `— placed ${placed}/13`;
+}
+
+chud.addEventListener('click', ev => {
+  const r = chud.getBoundingClientRect();
+  const x = Math.floor((ev.clientX - r.left - 1) / HCS);
+  const y = 7 - Math.floor((ev.clientY - r.top - 1) / HCS);
+  if (!inB(x, y)) return;
+  const reg = REG[x][y];
+  const cur = towers[reg];
+  towers[reg] = (cur && cur.x === x && cur.y === y) ? null : {x, y};
+  updateAll();
+});
+
+/* ------------------------------------------------------------------ log + status */
+function renderLog() {
+  const el2 = document.getElementById('log');
+  el2.innerHTML = '';
+  cache.steps.forEach(st => {
+    const div = document.createElement('div');
+    div.className = 'mv';
+    const dirCls = st.dz === 0 ? 'flat' : st.dz > 0 ? 'up' : 'down';
+    const dirTxt = st.dz === 0 ? `→ +${st.n}` : st.dz > 0 ? `↑ ×${st.n}` : `↓ ÷${st.n}`;
+    let badge = '';
+    const v = VAL[st.to.x][st.to.y];
+    if (isRecordMove(st.n)) {
+      if (v > 0 && v === st.score) { badge = `<span class="badge ok">rec ${v} ✓</span>`; div.classList.add('rec-ok'); }
+      else { badge = `<span class="badge bad">rec: board=${v || '∅'} got ${st.score}</span>`; div.classList.add('rec-bad'); }
+    } else if (v > 0) {
+      badge = `<span class="badge note">cell has ${v}</span>`;
+    }
+    div.innerHTML = `<span class="n">#${st.n}</span>` +
+      `<span>${alg(st.from)}→${alg(st.to)}</span>` +
+      `<span class="${dirCls}">${dirTxt}</span>` + badge +
+      `<span class="sc">${st.score}</span>`;
+    el2.appendChild(div);
+  });
+  el2.scrollTop = el2.scrollHeight;
+}
+
+function renderStatus() {
+  const cur = path[path.length - 1];
+  const placed = towers.filter(Boolean).length;
+  const visited = new Set(path.map(key));
+  const tv = towers.filter(c => c && visited.has(key(c))).length;
+  document.getElementById('stScore').textContent = cache.score;
+  document.getElementById('stMove').textContent = cache.steps.length + 1;
+  document.getElementById('stLegal').textContent = cache.legal.length;
+  document.getElementById('stTowers').textContent = `${tv} / ${placed}`;
+  document.getElementById('stPos').textContent = alg(cur) + ' (h' + heightAt(cur) + ')';
+}
+
+/* ------------------------------------------------------------------ tooltip / flash */
+const tip = document.getElementById('tooltip');
+function showTip(ev, c) {
+  const e = cache.la.get(key(c));
+  const v = VAL[c.x][c.y];
+  let html = `<b>${alg(c)}</b> · region ${REG[c.x][c.y]}${REG[c.x][c.y] === tetId ? ' (2×2 tet)' : ''}` +
+             ` · h${heightAt(c)}${towerSet.has(key(c)) ? ' ▲' : ''}${v > 0 ? ` · <b>written ${v}</b>` : ''}`;
+  if (e) {
+    const ds = [...e.byDepth.keys()].sort((a, b) => a - b);
+    for (const d of ds) {
+      let sc = [...e.byDepth.get(d)];
+      sc.sort((a, b) => (+a) - (+b));
+      const extra = sc.length > 15 ? ` +${sc.length - 15} more` : '';
+      html += `<br><span class="d">${d} move${d > 1 ? 's' : ''}:</span> ${geoOnly ? 'reachable' : 'scores ' + sc.slice(0, 15).join(', ') + extra}`;
+    }
+    html += `<br><span style="color:#7d8794">${e.paths.length} sample path${e.paths.length > 1 ? 's' : ''} shown</span>`;
+  }
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  tip.style.left = (ev.clientX + 16) + 'px';
+  tip.style.top = (ev.clientY + 14) + 'px';
+}
+function hideTip() { tip.style.display = 'none'; }
+
+let flashTimer = null;
+function flash(msg) {
+  const f = document.getElementById('flash');
+  f.textContent = msg; f.style.display = 'block';
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => f.style.display = 'none', 3500);
+}
+
+/* ------------------------------------------------------------------ events */
+c2d.addEventListener('mousemove', ev => {
+  const c = cellAt2d(ev);
+  const changed = (c && hoverCell && key(c) !== key(hoverCell)) || (!!c !== !!hoverCell);
+  hoverCell = c;
+  if (c) showTip(ev, c); else hideTip();
+  if (changed || c) draw2d();
+});
+c2d.addEventListener('mouseleave', () => { hoverCell = null; hideTip(); draw2d(); });
+c2d.addEventListener('click', ev => {
+  const c = cellAt2d(ev);
+  if (!c) return;
+  const m = cache.legal.find(m => key(m.to) === key(c));
+  if (m) { path.push(m.to); updateAll(); }
+});
+
+let drag = null;
+c3d.addEventListener('mousedown', ev => { drag = {x: ev.clientX, y: ev.clientY}; c3d.style.cursor = 'grabbing'; });
+window.addEventListener('mousemove', ev => {
+  if (!drag) return;
+  yaw += (ev.clientX - drag.x) * 0.008;
+  el = Math.min(1.45, Math.max(0.3, el + (ev.clientY - drag.y) * 0.006));
+  drag = {x: ev.clientX, y: ev.clientY};
+  draw3d();
+});
+window.addEventListener('mouseup', () => { drag = null; c3d.style.cursor = 'grab'; });
+
+document.getElementById('undoBtn').onclick = () => { if (path.length > 1) { path.pop(); updateAll(); } };
+window.addEventListener('keydown', ev => {
+  if (ev.key === 'z' && !ev.metaKey && !ev.ctrlKey) { if (path.length > 1) { path.pop(); updateAll(); } }
+});
+document.getElementById('resetPathBtn').onclick = () => { path = [{x: 0, y: 0}]; updateAll(); };
+document.getElementById('clearTowersBtn').onclick = () => { towers = Array(NREG).fill(null); updateAll(); };
+document.getElementById('resetViewBtn').onclick = () => { yaw = -0.55; el = 0.95; draw3d(); };
+document.getElementById('depthSel').onchange = ev => { depth = +ev.target.value; updateAll(); };
+document.getElementById('geoChk').onchange = ev => { geoOnly = ev.target.checked; updateAll(); };
+document.getElementById('kInput').onchange = ev => { K = ev.target.value === '' ? null : +ev.target.value; updateAll(); };
+document.getElementById('flipChk').onchange = ev => {
+  flipped = ev.target.checked;
+  buildBoards(); findTet();
+  towers = Array(NREG).fill(null);
+  path = [{x: 0, y: 0}];
+  flash('Board flipped — towers and path reset');
+  updateAll();
+};
+
+document.getElementById('exportBtn').onclick = () => {
+  prompt('Copy state JSON:', JSON.stringify(serialize()));
+};
+document.getElementById('importBtn').onclick = () => {
+  const s = prompt('Paste state JSON:');
+  if (!s) return;
+  try { deserialize(JSON.parse(s)); updateAll(); flash('State imported'); }
+  catch (e) { flash('Import failed: ' + e.message); }
+};
+
+/* ------------------------------------------------------------------ persistence */
+function serialize() {
+  return {
+    v: 1, flipped, K, depth, geoOnly,
+    towers: towers.map(c => c ? [c.x, c.y] : null),
+    path: path.map(c => [c.x, c.y]),
+  };
+}
+function deserialize(o) {
+  flipped = !!o.flipped;
+  document.getElementById('flipChk').checked = flipped;
+  buildBoards(); findTet();
+  K = o.K ?? null;
+  document.getElementById('kInput').value = K ?? '';
+  depth = o.depth ?? 2;
+  document.getElementById('depthSel').value = depth;
+  geoOnly = !!o.geoOnly;
+  document.getElementById('geoChk').checked = geoOnly;
+  towers = (o.towers || []).map(c => c ? {x: c[0], y: c[1]} : null);
+  while (towers.length < NREG) towers.push(null);
+  const p = (o.path || [[0, 0]]).map(c => ({x: c[0], y: c[1]}));
+  path = (p.length && p[0].x === 0 && p[0].y === 0) ? p : [{x: 0, y: 0}];
+}
+function save() {
+  try { localStorage.setItem('js-july-2026', JSON.stringify(serialize())); } catch (e) {}
+}
+function load() {
+  try {
+    const s = localStorage.getItem('js-july-2026');
+    if (s) deserialize(JSON.parse(s));
+  } catch (e) {}
+}
+
+/* ------------------------------------------------------------------ init */
+let tetId = -1;
+function findTet() {
+  for (let i = 0; i < NREG; i++) if (REGION_CELLS[i].length === 4) tetId = i;
+}
+
+function updateAll() {
+  recompute();
+  draw2d(); draw3d(); drawHud();
+  renderLog(); renderStatus();
+  save();
+}
+
+buildBoards(); findTet();
+load();
+updateAll();
+</script>
+</body>
+</html>
