@@ -1,4 +1,4 @@
-
+from __future__ import annotations
 
 
 """
@@ -31,8 +31,7 @@ from dataclasses import dataclass
 
 import copy
 from collections import defaultdict, deque
-from turtle import ScrolledCanvas
-
+from typing import List, Optional
 
 
 # should be reasonably tractable to prune according to the three step scores .
@@ -52,6 +51,8 @@ board = [
     [0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 37, 0, 1100],
 ]
+
+targets = [x for row in board for x in row if x != 0]
 
 
 sol = copy.deepcopy(board)
@@ -96,6 +97,13 @@ class Tour:
     move : int
     score : int
     path : list[Position]
+
+class Node:
+    score : int
+    parent : Node
+    children : List[Node]
+    
+
 
 
 def main(board, visited, tower_config, curr_score, N):
@@ -154,16 +162,15 @@ def main(board, visited, tower_config, curr_score, N):
 
     
     def bfs(board : list[list[int]], visited : set, tower_config : list[list[int]], curr_score : int, move : int):  
+        pass
         
         
         
-        
-
     
-    while towers_visited < 16:
+    # while towers_visited < 16:
         
-        for t in targets:
-        ops, _  = possible_ops(score, n, )
+    #     for t in targets:
+    #     ops, _  = possible_ops(score, n, )
         
         
     
@@ -199,16 +206,34 @@ def possible_ops(curr_score: int, n: int, target: int, num_moves: int = 3):
 
    
 
-
-def get
+target_times = [3, 6, 9, 12, 15, 18, 25, 32, 39, 46, 53]
 
 # Mainly for manual excursion of knight, not useful for algorithmic sol
 def print_viable_score_processes_intracheckpoint():
-    for k in range(0, 22):
-        print(f"Considering every {k} moves")
-        for row in board:
-            for cell in row: 
-                if cell != 0: 
-                    
-                    print(possible_ops(88, 19, cell, k))
-                    
+    
+
+    curr = 0
+    target = 0
+    
+    for n in target_times:
+        print("--------------------------------")
+        
+        
+        k = 3 if n < 19 else 7
+        print(f"Looking at steps {n - k}-{n}")
+
+        for tscore in targets: 
+
+            paths = possible_ops(curr, n - k + 1, tscore, k)
+
+            if paths:
+                ops, trace = paths[0]
+                print(f"Found a path to target cell {tscore}")
+                target = tscore
+                print(ops, trace)
+                
+        curr = target
+                
+
+if __name__ == "__main__":
+    print_viable_score_processes_intracheckpoint()

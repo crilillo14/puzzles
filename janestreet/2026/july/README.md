@@ -7,3 +7,10 @@ After adding these towers, place a knight at the bottom-left square. It then pro
 But there’s a catch: As you can see, the knight starts with a score of 0. On its Nth move, its score increases by N if the move is to a location at the same altitude as the square it moved from. If, instead, it moves up, the score is multiplied by N. And finally, if it moves down, the score is divided by N. This last type of move is only allowed if the score is evenly divisible by N.
 
 Every three moves, up until move #18, the knight wrote down its score upon arriving at a given square. From then on it only wrote down its score every K moves, for some larger value K. Using this information, can you reconstruct the knight’s path?
+
+
+
+# Notes
+
+It's been a couple days, but I think I've found a viable method for solving this puzzle.
+
